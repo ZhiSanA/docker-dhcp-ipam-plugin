@@ -1,0 +1,38 @@
+{
+  "description": "Docker IPAM driver that allocates IPs via DHCP from the LAN",
+  "documentation": "https://github.com/tuzi/docker-dhcp-ipam-plugin",
+  "entrypoint": ["/usr/bin/docker-dhcp-ipam-plugin"],
+  "network": {
+    "type": "host"
+  },
+  "interface": {
+    "types": ["ipamdriver"],
+    "socket": "dhcp_ipam.sock"
+  },
+  "linux": {
+    "capabilities": ["CAP_NET_RAW", "CAP_NET_ADMIN"],
+    "allowAllDevices": true
+  },
+  "env": [
+    {
+      "name": "DHCP_IPAM_INTERFACE",
+      "value": "",
+      "description": "Network interface to use for DHCP (auto-detect if empty)"
+    },
+    {
+      "name": "DHCP_IPAM_LOG_LEVEL",
+      "value": "info",
+      "description": "Log level: debug, info, warn, error"
+    },
+    {
+      "name": "DHCP_IPAM_TIMEOUT",
+      "value": "10s",
+      "description": "DHCP request timeout"
+    },
+    {
+      "name": "DHCP_IPAM_RETRIES",
+      "value": "3",
+      "description": "DHCP request retry count"
+    }
+  ]
+}
