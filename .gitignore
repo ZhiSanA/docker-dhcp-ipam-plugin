@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+rootfs/
+plugin-rootfs/
+plugin-flat/
+plugin-true/
+test-plugin/
+
+# IDE
+.vscode/
+.idea/
+
+# Go
+vendor/
+
+# Temp files
+*.tmp
+*.swp
