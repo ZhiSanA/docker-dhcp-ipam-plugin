@@ -1,10 +1,13 @@
 BINARY_NAME = docker-dhcp-ipam-plugin
 PLUGIN_NAME = dhcp-ipam
 
+# Go build requires go in PATH. Go is installed at /home/tuzi/.go/bin/
+# Add it: export PATH=$PATH:/home/tuzi/.go/bin
+
 .PHONY: build plugin clean
 
 build:
-	CGO_ENABLED=0 go build -ldflags="-s -w" -o build/$(BINARY_NAME) ./cmd/$(BINARY_NAME)
+	CGO_ENABLED=0 go build -ldflags="-s -w" -o build/$(BINARY_NAME) .
 
 plugin: build
 	mkdir -p plugin/rootfs
