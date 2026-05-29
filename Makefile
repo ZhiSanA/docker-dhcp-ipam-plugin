@@ -1,6 +1,12 @@
+GOROOT := $(shell command -v go >/dev/null 2>&1 && go env GOROOT || echo "$(HOME)/.go")
+PATH := $(GOROOT)/bin:$(HOME)/.local/bin:$(PATH)
+
 BINARY_NAME = docker-dhcp-ipam-plugin
 PLUGIN_NAME  = dhcp-ipam
 IMAGE_NAME   = $(PLUGIN_NAME)-builder
+
+export GOROOT
+export PATH
 
 .PHONY: build plugin-rootfs plugin clean fmt vet all
 
