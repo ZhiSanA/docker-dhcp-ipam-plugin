@@ -1,0 +1,58 @@
+# Docker Compose for DHCP IPAM Plugin Testing
+#
+# Tests the plugin using the host's LAN DHCP server.
+# The plugin must be enabled first (make plugin or standalone mode).
+#
+# Usage:
+#   docker compose up -d           # Start nginx on DHCP network
+#   docker compose logs nginx      # Check nginx got an IP
+#   docker compose down            # Clean up
+#
+# Prerequisites:
+#   - Docker plugin enabled: docker plugin ls (look for dhcp-ipam)
+#   - Or standalone: sudo ./build/docker-dhcp-ipam-plugin &
+#   - macvlan network exists: docker network ls (look for dhcp-net)
+#
+# First-time setup:
+#   make plugin                    # Option A: Docker managed plugin
+#   - or -
+#   make build                     # Option B: Standalone plugin
+#   sudo DHCP_IPAM_SOCKET_PATH=/run/docker/plugins/dhcp_ipam.sock \
+#     ./build/docker-dhcp-ipam-plugin &
+#   echo "unix:///run/docker/plugins/dhcp_ipam.sock" | \
+#     sudo tee /etc/docker/plugins/dhcp-ipam.spec
+#
+#   docker network create \
+#     --driver macvlan \
+#     --opt parent=wlan0 \
+#     --ipam-driver dhcp-ipam \
+#     dhcp-net
+
+services:
+  # Test nginx container - gets IP from LAN DHCP via dhcp-net network
+  nginx:
+    image: nginx:alpine
+    container_name: dhcp-test-nginx
+    hostname: dhcp-test-nginx
+    networks:
+      dhcp-net: {}
+    ports:
+      - "8080:80"
+    # Show IP on startup
+    command:
+      - sh
+      - -c
+      - |
+        echo "=== Container started ==="
+        echo "Hostname: $$(hostname)"
+        echo "IP info:"
+        ip addr show eth0 | grep 'inet '
+        echo "Default route:"
+        ip route show default
+        echo "=== Starting nginx ==="
+        nginx -g 'daemon off;'
+
+networks:
+  dhcp-net:
+    name: dhcp-net
+    external: true
