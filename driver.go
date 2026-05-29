@@ -331,6 +331,8 @@ type Driver struct {
 	leases      *LeaseStore
 	cancelFuncs map[string]context.CancelFunc
 	mu          sync.Mutex
+	poolOnce    sync.Once
+	poolID      string
 }
 
 func (d *Driver) GetCapabilities() (*ipam.CapabilitiesResponse, error) {
@@ -358,11 +360,15 @@ func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolRes
 			return nil, fmt.Errorf("requested pool %q != detected subnet %q", requested.String(), detected.String())
 		}
 	}
-	poolID := uuid.New().String()
-	d.pools.Add(poolID, &PoolInfo{Subnet: d.iface.Subnet, Gateway: d.iface.Gateway})
-	log.Printf("RequestPool: poolID=%s subnet=%s gateway=%s", poolID, d.iface.Subnet, d.iface.Gateway)
+
+	d.poolOnce.Do(func() {
+		d.poolID = uuid.New().String()
+		d.pools.Add(d.poolID, &PoolInfo{Subnet: d.iface.Subnet, Gateway: d.iface.Gateway})
+	})
+
+	log.Printf("RequestPool: poolID=%s subnet=%s gateway=%s", d.poolID, d.iface.Subnet, d.iface.Gateway)
 	return &ipam.RequestPoolResponse{
-		PoolID: poolID,
+		PoolID: d.poolID,
 		Pool:   d.iface.Subnet,
 		Data:   map[string]string{"gateway": d.iface.Gateway},
 	}, nil

@@ -1,15 +1,7 @@
 # Build artifacts
-build/
 plugin/
-rootfs/
+docker-dhcp-ipam-plugin
 
 # IDE
 .vscode/
 .idea/
-
-# Go
-vendor/
-
-# Temp files
-*.tmp
-*.swp
