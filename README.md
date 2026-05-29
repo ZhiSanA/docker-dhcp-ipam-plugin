@@ -1,42 +1,42 @@
-# Docker DHCP IPAM Plugin
+# Docker DHCP IPAM 插件
 
-A Docker IPAM (IP Address Management) driver plugin that allocates container IP addresses via DHCP from the host's LAN. Each container gets a real, routable LAN IP address through a full DHCP DORA cycle.
+一个 Docker IPAM（IP 地址管理）驱动插件，通过 DHCP 从宿主机局域网为容器分配 IP 地址。每个容器通过完整的 DHCP DORA 流程获取一个真实可路由的局域网 IP。
 
-## How It Works
+## 工作原理
 
-When a container is created on a network using this IPAM driver:
+当容器在此 IPAM 驱动的网络上创建时：
 
-1. A unique MAC address is generated for the container (`02:1a:2b:xx:yy:zz`, locally administered)
-2. A DHCP Discover-Offer-Request-Ack (DORA) cycle is performed on the host's physical interface
-3. The leased IP address is returned to Docker and assigned to the container
-4. A background goroutine handles lease renewal (at ~80% of T1/lease time)
-5. When the container is removed, DHCPRELEASE is sent back to the DHCP server
+1. 为容器生成唯一 MAC 地址（`02:1a:2b:xx:yy:zz`，本地管理单播地址）
+2. 在宿主机物理网卡上执行 DHCP Discover-Offer-Request-Ack (DORA) 流程
+3. 租赁到的 IP 地址返回给 Docker 并分配给容器
+4. 后台 goroutine 负责在 ~80% T1/租赁时间时自动续约
+5. 容器删除时，向 DHCP 服务器发送 DHCPRELEASE
 
-## Prerequisites
+## 前提条件
 
-- Docker CE/EE (tested on Docker 29.x)
-- Host connected to a LAN with a DHCP server
-- Linux (requires `CAP_NET_RAW` for raw DHCP sockets)
+- Docker CE/EE（在 Docker 29.x 上测试）
+- 宿主机连接到有 DHCP 服务器的局域网
+- Linux 系统（需要 `CAP_NET_RAW` 使用原始 DHCP 套接字）
 
-## Build & Install
+## 构建与安装
 
-### From source
+### 从源码构建
 
 ```bash
-# Build the plugin binary
+# 编译插件二进制
 make build
 
-# Package and install as Docker managed plugin
+# 打包并安装为 Docker managed plugin
 make plugin
 ```
 
-### Manual plugin setup
+### 手动安装
 
 ```bash
-# Build binary
+# 编译二进制
 CGO_ENABLED=0 go build -ldflags="-s -w" -o build/docker-dhcp-ipam-plugin ./cmd/docker-dhcp-ipam-plugin
 
-# Create rootfs
+# 创建 rootfs
 mkdir -p plugin-rootfs
 docker build -t dhcp-ipam-rootfs .
 docker create --name dhcp-ipam-extract dhcp-ipam-rootfs
@@ -44,14 +44,14 @@ docker export dhcp-ipam-extract | tar x -C plugin-rootfs/
 docker rm dhcp-ipam-extract
 cp config.json plugin-rootfs/
 
-# Create and enable plugin
+# 创建并启用插件
 docker plugin create dhcp-ipam plugin-rootfs/
 docker plugin enable dhcp-ipam
 ```
 
-## Usage
+## 使用方法
 
-Create a macvlan network using the DHCP IPAM driver:
+创建使用 DHCP IPAM 驱动的 macvlan 网络：
 
 ```bash
 docker network create \
@@ -61,59 +61,59 @@ docker network create \
   dhcp-net
 ```
 
-Run a container on this network:
+在此网络上运行容器：
 
 ```bash
 docker run --network dhcp-net --rm alpine ip addr
 ```
 
-The container will receive an IP address from the LAN's DHCP server.
+容器将获得局域网 DHCP 服务器分配的 IP 地址。
 
-## Configuration
+## 配置
 
-Configuration is via environment variables passed to the plugin:
+通过环境变量配置插件：
 
-| Variable | Default | Description |
+| 变量 | 默认值 | 说明 |
 |---|---|---|
-| `DHCP_IPAM_INTERFACE` | (auto-detect) | Network interface for DHCP (e.g., `eth0`, `wlan0`) |
-| `DHCP_IPAM_SOCKET_PATH` | `/run/docker/plugins/dhcp_ipam.sock` | Unix socket path |
-| `DHCP_IPAM_LOG_LEVEL` | `info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
-| `DHCP_IPAM_TIMEOUT` | `10s` | DHCP request timeout |
-| `DHCP_IPAM_RETRIES` | `3` | DHCP request retry count |
+| `DHCP_IPAM_INTERFACE` | 自动检测 | DHCP 使用的网卡（如 `eth0`、`wlan0`） |
+| `DHCP_IPAM_SOCKET_PATH` | `/run/docker/plugins/dhcp_ipam.sock` | Unix 套接字路径 |
+| `DHCP_IPAM_LOG_LEVEL` | `info` | 日志级别（`debug`、`info`、`warn`、`error`） |
+| `DHCP_IPAM_TIMEOUT` | `10s` | DHCP 请求超时时间 |
+| `DHCP_IPAM_RETRIES` | `3` | DHCP 请求重试次数 |
 
 ```bash
 docker plugin set dhcp-ipam DHCP_IPAM_INTERFACE=eth1
 docker plugin set dhcp-ipam DHCP_IPAM_LOG_LEVEL=debug
 ```
 
-## Architecture
+## 架构
 
 ```
-Docker daemon → Unix socket → IPAM handler → IPAM driver → DHCP client → LAN DHCP server
+Docker daemon → Unix 套接字 → IPAM handler → IPAM driver → DHCP 客户端 → 局域网 DHCP 服务器
 ```
 
-- **cmd/main.go** — HTTP server entry point with custom handler (lowercase manifest for Docker 29.x compat)
-- **pkg/ipam** — Core driver implementing 6 IPAM API methods (GetCapabilities, RequestPool, RequestAddress, etc.)
-- **pkg/dhcp** — DHCP client wrapper around `nclient4` (DORA, Renew, Release, auto-renewal)
-- **pkg/iface** — Auto-detects host interface, subnet, gateway via `/proc/net/route`
-- **pkg/store** — Thread-safe in-memory pool and lease stores
-- **pkg/config** — Environment variable configuration
+- **cmd/main.go** — HTTP 服务入口，自定义 handler（使用小写 manifest 以兼容 Docker 29.x）
+- **pkg/ipam** — 核心驱动，实现 6 个 IPAM API 方法（GetCapabilities、RequestPool、RequestAddress 等）
+- **pkg/dhcp** — DHCP 客户端封装（DORA、续约、释放、自动续约循环）
+- **pkg/iface** — 自动检测宿主机网卡、子网、网关（通过 `/proc/net/route`）
+- **pkg/store** — 线程安全的内存池和租赁存储
+- **pkg/config** — 环境变量配置
 
-## Testing
+## 测试
 
 ```bash
-make test          # Run all tests with race detection
-go test -v ./pkg/iface/...  # Test interface detection
-go test -v ./pkg/store/...  # Test store implementations
+make test                    # 运行所有测试（含竞态检测）
+go test -v ./pkg/iface/...   # 测试网卡检测
+go test -v ./pkg/store/...   # 测试存储实现
 ```
 
-## Known Issues
+## 已知问题
 
-- **Docker 29.x managed plugin bug**: `docker plugin create` stores interface types with a leading `.` and trailing `/` prefix/suffix, causing `"ipamdriver"` capability matching to fail. The Plugin.Activate endpoint returns the correct manifest. A workaround is being investigated.
-- Requires `CAP_NET_RAW` for raw DHCP sockets (included in plugin configuration).
-- The plugin uses `--net=host` to access the host's physical network interface.
-- Only IPv4 DHCP is supported (no IPv6/DHCPv6 yet).
+- **Docker 29.x managed plugin bug**：`docker plugin create` 保存接口类型时会自动添加前缀 `.` 和后缀 `/`，导致 `"ipamdriver"` 能力匹配失败。但 Plugin.Activate 端点返回的 manifest 是正确的。解决方案正在研究中。
+- 需要 `CAP_NET_RAW` 权限以使用原始 DHCP 套接字（已在插件配置中包含）。
+- 插件使用 `--net=host` 以访问宿主机物理网卡。
+- 仅支持 IPv4 DHCP（暂不支持 IPv6/DHCPv6）。
 
-## License
+## 许可证
 
 MIT
