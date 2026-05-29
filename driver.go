@@ -27,7 +27,7 @@ const (
 	envDHCPTimeout   = "DHCP_IPAM_TIMEOUT"
 	envDHCPRetries   = "DHCP_IPAM_RETRIES"
 
-	defaultSocketPath = "/run/docker/plugins/dhcp_ipam.sock"
+	defaultSocketPath = "/run/docker/plugins/dhcp-ipam.sock"
 	defaultLogLevel   = "info"
 )
 

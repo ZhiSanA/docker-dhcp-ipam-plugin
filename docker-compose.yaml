@@ -27,4 +27,4 @@ networks:
     driver_opts:
       parent: wlan0
     ipam:
-      driver: dhcp-ipam
+      driver: tuzi/dhcp-ipam
