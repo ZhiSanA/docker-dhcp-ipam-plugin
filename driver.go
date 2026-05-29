@@ -1,4 +1,4 @@
-package docker_dhcp_ipam_plugin
+package main
 
 import (
 	"bufio"
