@@ -130,9 +130,11 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 		return nil, fmt.Errorf("static address assignment not supported by DHCP IPAM driver")
 	}
 
-	// Generate MAC address for this container
-	mac := generateMAC(req.PoolID)
-	log.Printf("RequestAddress: poolID=%s, generated MAC=%s", req.PoolID, mac.String())
+	log.Printf("RequestAddress: poolID=%s, options=%v", req.PoolID, req.Options)
+
+	// Resolve MAC address: prefer from options, fall back to generated.
+	mac := resolveMAC(req.Options, req.PoolID)
+	log.Printf("RequestAddress: poolID=%s, using MAC=%s", req.PoolID, mac.String())
 
 	// Perform DHCP DORA
 	ctx, cancel := context.WithTimeout(context.Background(), d.config.DHCPTimeout)
@@ -205,6 +207,20 @@ func (d *Driver) ReleaseAddress(req *ipam.ReleaseAddressRequest) error {
 	d.leaseStore.Remove(req.PoolID, addr)
 	log.Printf("ReleaseAddress: poolID=%s, addr=%s", req.PoolID, addr)
 	return nil
+}
+
+// resolveMAC extracts a MAC address from Docker options or generates one.
+// Docker may pass "mac" or "macaddress" in options when RequiresMACAddress is true.
+func resolveMAC(opts map[string]string, poolID string) net.HardwareAddr {
+	for _, key := range []string{"mac", "macaddress"} {
+		if v, ok := opts[key]; ok && v != "" {
+			if hw, err := net.ParseMAC(v); err == nil {
+				return hw
+			}
+			log.Printf("resolveMAC: failed to parse %q from options[%q], falling back to generated", v, key)
+		}
+	}
+	return generateMAC(poolID)
 }
 
 // generateMAC creates a deterministic, locally administered unicast MAC address
