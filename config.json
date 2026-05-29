@@ -7,7 +7,7 @@
   },
   "interface": {
     "types": ["docker.ipamdriver/1.0"],
-    "socket": "dhcp_ipam.sock"
+    "socket": "dhcp-ipam.sock"
   },
   "linux": {
     "capabilities": ["CAP_NET_RAW", "CAP_NET_ADMIN"]

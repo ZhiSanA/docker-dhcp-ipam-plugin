@@ -10,7 +10,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /build/docker-dhcp-ipam-plugin .
 
-FROM alpine:3.20
+FROM alpine:3.20 AS runner
 
 RUN apk add --no-cache ca-certificates iptables
 
