@@ -12,7 +12,7 @@ echo "==> Cleaning up old plugin..."
 docker plugin rm --force "$NAME" 2>/dev/null || true
 echo "    ✅ Done"
 
-WORKDIR=$(mktemp)
+WORKDIR=$(mktemp -d)
 mkdir -p "$WORKDIR/rootfs"
 
 echo "==> Building binary..."
