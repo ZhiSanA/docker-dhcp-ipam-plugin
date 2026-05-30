@@ -145,6 +145,16 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 		return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
 	}
 
+	// IPv6: use EUI-64 from the container's MAC to generate a stable address.
+	if isV6 {
+		mac := resolveMAC(req.Options, req.PoolID, d.cfg)
+		ipv6Addr := eui64Address(subnetCIDR, mac)
+		log.Printf("RequestAddress: IPv6 pool, MAC=%s addr=%s", mac, ipv6Addr)
+		return &ipam.RequestAddressResponse{
+			Address: ipv6Addr,
+		}, nil
+	}
+
 	// No address specified — obtain via DHCP.
 	mac := resolveMAC(req.Options, req.PoolID, d.cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), d.cfg.DHCPTimeout)
