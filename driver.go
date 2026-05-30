@@ -388,20 +388,51 @@ func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
 func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestAddressResponse, error) {
 	log.Printf("RequestAddress: poolID=%s address=%q options=%v", req.PoolID, req.Address, req.Options)
 
-	respAddr := req.Address
-	if respAddr == "" {
-		respAddr = d.iface.Subnet
-	} else if ip := net.ParseIP(respAddr); ip != nil {
-		// Bare IP without mask (e.g. gateway "10.0.0.1") — append subnet prefix.
-		_, ipNet, _ := net.ParseCIDR(d.iface.Subnet)
-		ones, _ := ipNet.Mask.Size()
-		respAddr = fmt.Sprintf("%s/%d", ip.String(), ones)
+	// Gateway — return as-is with subnet prefix.
+	if req.Address != "" {
+		if ip := net.ParseIP(req.Address); ip != nil && ip.Equal(net.ParseIP(d.iface.Gateway)) {
+			_, ipNet, _ := net.ParseCIDR(d.iface.Subnet)
+			ones, _ := ipNet.Mask.Size()
+			cidrAddr := fmt.Sprintf("%s/%d", ip.String(), ones)
+			log.Printf("RequestAddress: returning gateway addr=%s", cidrAddr)
+			return &ipam.RequestAddressResponse{
+				Address: cidrAddr,
+			}, nil
+		}
+		log.Printf("RequestAddress: refusing static address %q", req.Address)
+		return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
 	}
-	// else: already a CIDR string, use as-is.
 
+	// No address specified — obtain via DHCP.
+	mac := resolveMAC(req.Options, req.PoolID)
+	ctx, cancel := context.WithTimeout(context.Background(), d.cfg.DHCPTimeout)
+	defer cancel()
+
+	lease, err := d.dhcp.Obtain(ctx, d.iface.Name, mac)
+	if err != nil {
+		return nil, fmt.Errorf("DHCP request failed: %w", err)
+	}
+
+	addr := lease.ACK.YourIPAddr.String()
+	_, ipNet, err := net.ParseCIDR(d.iface.Subnet)
+	if err != nil {
+		return nil, fmt.Errorf("parse subnet %q: %w", d.iface.Subnet, err)
+	}
+	ones, _ := ipNet.Mask.Size()
+	cidrAddr := fmt.Sprintf("%s/%d", addr, ones)
+
+	d.leases.Add(req.PoolID, addr, lease)
+
+	renewCtx, renewCancel := context.WithCancel(context.Background())
+	d.mu.Lock()
+	d.cancelFuncs[cancelKey(req.PoolID, addr)] = renewCancel
+	d.mu.Unlock()
+	go d.dhcp.RenewLoop(renewCtx, d.iface.Name, lease, d.leases, req.PoolID, addr)
+
+	log.Printf("RequestAddress: poolID=%s addr=%s cidr=%s MAC=%s", req.PoolID, addr, cidrAddr, mac)
 	return &ipam.RequestAddressResponse{
-		Address: respAddr,
-		Data:    map[string]string{"mac_address": d.iface.MAC.String()},
+		Address: cidrAddr,
+		Data:    map[string]string{"mac_address": mac.String()},
 	}, nil
 }
 
