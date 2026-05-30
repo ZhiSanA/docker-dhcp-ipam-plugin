@@ -420,6 +420,7 @@ func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
 }
 
 func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestAddressResponse, error) {
+	log.Printf("RequestAddress: poolID=%s options=%v ifaceGateway=%v", req.PoolID, req.Options, d.iface.Gateway)
 	if req.Address != "" {
 		reqIP, _, err := net.ParseCIDR(req.Address)
 		if err == nil && reqIP.Equal(net.ParseIP(d.iface.Gateway)) {
@@ -431,7 +432,6 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 		log.Printf("RequestAddress: refusing static address %q for poolID=%s", req.Address, req.PoolID)
 		return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
 	}
-	log.Printf("RequestAddress: poolID=%s options=%v", req.PoolID, req.Options)
 
 	mac := resolveMAC(req.Options, req.PoolID)
 	ctx, cancel := context.WithTimeout(context.Background(), d.cfg.DHCPTimeout)
