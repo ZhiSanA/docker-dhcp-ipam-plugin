@@ -7,10 +7,13 @@ import (
 	"net"
 	"time"
 
+	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/insomniacslk/dhcp/dhcpv4/nclient4"
+	"github.com/insomniacslk/dhcp/dhcpv6"
+	"github.com/insomniacslk/dhcp/dhcpv6/nclient6"
 )
 
-// ── DHCP Client ───────────────────────────────────────────────────────
+// ── DHCP Client (IPv4) ───────────────────────────────────────────────
 
 type DHCPClient struct {
 	timeout time.Duration
@@ -21,7 +24,7 @@ func newDHCPClient(cfg *Config) *DHCPClient {
 	return &DHCPClient{timeout: cfg.DHCPTimeout, retries: cfg.DHCPRetries}
 }
 
-func (c *DHCPClient) Obtain(ctx context.Context, ifaceName string, hwAddr net.HardwareAddr) (*nclient4.Lease, error) {
+func (c *DHCPClient) Obtain(ctx context.Context, ifaceName string, hwAddr net.HardwareAddr, hostname string) (*nclient4.Lease, error) {
 	cli, err := nclient4.New(ifaceName,
 		nclient4.WithHWAddr(hwAddr),
 		nclient4.WithTimeout(c.timeout),
@@ -31,7 +34,12 @@ func (c *DHCPClient) Obtain(ctx context.Context, ifaceName string, hwAddr net.Ha
 		return nil, fmt.Errorf("dhcp client: %w", err)
 	}
 	defer cli.Close()
-	return cli.Request(ctx)
+
+	mods := []dhcpv4.Modifier{}
+	if hostname != "" {
+		mods = append(mods, dhcpv4.WithGeneric(dhcpv4.OptionHostName, []byte(hostname)))
+	}
+	return cli.Request(ctx, mods...)
 }
 
 func (c *DHCPClient) Renew(ctx context.Context, ifaceName string, lease *nclient4.Lease) (*nclient4.Lease, error) {
@@ -59,7 +67,7 @@ func (c *DHCPClient) Release(ifaceName string, lease *nclient4.Lease) error {
 	return cli.Release(lease)
 }
 
-// ── Renewal Loop ──────────────────────────────────────────────────────
+// ── Renewal Loop (IPv4) ──────────────────────────────────────────────
 
 func (c *DHCPClient) RenewLoop(ctx context.Context, ifaceName string, lease *nclient4.Lease, store *LeaseStore, poolID, addr string) {
 	currentLease := lease
@@ -99,4 +107,51 @@ func nextRenewalDelay(lease *nclient4.Lease, timeout time.Duration) time.Duratio
 		return time.Duration(float64(lt) * 0.4)
 	}
 	return 5 * time.Minute
+}
+
+// ── DHCP Client (IPv6) ───────────────────────────────────────────────
+
+type DHCPv6Client struct {
+	timeout time.Duration
+	retries int
+}
+
+func newDHCPv6Client(cfg *Config) *DHCPv6Client {
+	return &DHCPv6Client{timeout: cfg.DHCPTimeout, retries: cfg.DHCPRetries}
+}
+
+// Obtain6 performs DHCPv6 Solicit → Request to get an IPv6 address.
+func (c *DHCPv6Client) Obtain6(ctx context.Context, ifaceName string, hwAddr net.HardwareAddr, hostname string) (*dhcpv6.Message, error) {
+	cli, err := nclient6.New(ifaceName,
+		nclient6.WithTimeout(c.timeout),
+		nclient6.WithRetry(c.retries),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("dhcpv6 client: %w", err)
+	}
+	defer cli.Close()
+
+	// Build DUID from MAC (DUID-LL)
+	duid, err := dhcpv6.GetDUIDLL()
+	if err != nil {
+		return nil, fmt.Errorf("dhcpv6 duid: %w", err)
+	}
+	mods := []dhcpv6.Modifier{
+		dhcpv6.WithClientID(duid),
+	}
+	if hostname != "" {
+		mods = append(mods, dhcpv6.WithFQDN(0, hostname))
+	}
+
+	advertise, err := cli.Solicit(ctx, mods...)
+	if err != nil {
+		return nil, fmt.Errorf("dhcpv6 solicit: %w", err)
+	}
+
+	reply, err := cli.Request(ctx, advertise, mods...)
+	if err != nil {
+		return nil, fmt.Errorf("dhcpv6 request: %w", err)
+	}
+
+	return reply, nil
 }
