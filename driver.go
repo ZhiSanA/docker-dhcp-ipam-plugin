@@ -444,7 +444,7 @@ func (d *Driver) ReleaseAddress(req *ipam.ReleaseAddressRequest) error {
 // ── Helpers ───────────────────────────────────────────────────────────
 
 func resolveMAC(opts map[string]string, poolID string) net.HardwareAddr {
-	for _, key := range []string{"mac", "macaddress"} {
+	for _, key := range []string{"mac", "macaddress", "com.docker.network.endpoint.macaddress"} {
 		if v, ok := opts[key]; ok && v != "" {
 			if hw, err := net.ParseMAC(v); err == nil {
 				return hw
