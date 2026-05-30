@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/docker/go-plugins-helpers/ipam"
-	"github.com/google/uuid"
 	"github.com/insomniacslk/dhcp/dhcpv4/nclient4"
 )
 
@@ -260,6 +259,13 @@ func (s *PoolStore) Remove(id string) {
 	delete(s.pools, id)
 }
 
+func (s *PoolStore) Exists(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	_, ok := s.pools[id]
+	return ok
+}
+
 type LeaseStore struct {
 	mu     sync.RWMutex
 	leases map[string]map[string]*nclient4.Lease
@@ -331,22 +337,28 @@ type Driver struct {
 	leases      *LeaseStore
 	cancelFuncs map[string]context.CancelFunc
 	mu          sync.Mutex
-	poolOnce    sync.Once
-	poolID      string
 }
 
 func (d *Driver) GetCapabilities() (*ipam.CapabilitiesResponse, error) {
-	return &ipam.CapabilitiesResponse{RequiresMACAddress: true}, nil
+	log.Printf("GetCapabilities")
+	resp := &ipam.CapabilitiesResponse{RequiresMACAddress: true}
+	log.Printf("GetCapabilities: RequiresMACAddress=%v", resp.RequiresMACAddress)
+	return resp, nil
 }
 
 func (d *Driver) GetDefaultAddressSpaces() (*ipam.AddressSpacesResponse, error) {
-	return &ipam.AddressSpacesResponse{
+	log.Printf("GetDefaultAddressSpaces")
+	resp := &ipam.AddressSpacesResponse{
 		LocalDefaultAddressSpace:  "dhcp-local",
 		GlobalDefaultAddressSpace: "dhcp-global",
-	}, nil
+	}
+	log.Printf("GetDefaultAddressSpaces: local=%s global=%s", resp.LocalDefaultAddressSpace, resp.GlobalDefaultAddressSpace)
+	return resp, nil
 }
 
 func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolResponse, error) {
+	// Resolve the pool CIDR: use req.Pool if given, otherwise fall back to detected subnet
+	poolCIDR := d.iface.Subnet
 	if req.Pool != "" {
 		_, requested, err := net.ParseCIDR(req.Pool)
 		if err != nil {
@@ -359,22 +371,26 @@ func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolRes
 		if requested.String() != detected.String() {
 			return nil, fmt.Errorf("requested pool %q != detected subnet %q", requested.String(), detected.String())
 		}
+		poolCIDR = requested.String()
 	}
 
-	d.poolOnce.Do(func() {
-		d.poolID = uuid.New().String()
-		d.pools.Add(d.poolID, &PoolInfo{Subnet: d.iface.Subnet, Gateway: d.iface.Gateway})
-	})
+	// Pool (CIDR) can only be requested once
+	if d.pools.Exists(poolCIDR) {
+		return nil, fmt.Errorf("pool %q already exists; release it before requesting again", poolCIDR)
+	}
 
-	log.Printf("RequestPool: poolID=%s subnet=%s gateway=%s", d.poolID, d.iface.Subnet, d.iface.Gateway)
+	d.pools.Add(poolCIDR, &PoolInfo{Subnet: d.iface.Subnet, Gateway: d.iface.Gateway})
+
+	log.Printf("RequestPool: poolID=%s subnet=%s gateway=%s req.Pool=%q", poolCIDR, d.iface.Subnet, d.iface.Gateway, req.Pool)
 	return &ipam.RequestPoolResponse{
-		PoolID: d.poolID,
+		PoolID: poolCIDR,
 		Pool:   d.iface.Subnet,
 		Data:   map[string]string{"gateway": d.iface.Gateway},
 	}, nil
 }
 
 func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
+	log.Printf("ReleasePool: poolID=%s", req.PoolID)
 	leases := d.leases.ReleaseAll(req.PoolID)
 	for _, l := range leases {
 		if err := d.dhcp.Release(d.iface.Name, l); err != nil {
@@ -391,12 +407,21 @@ func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
 	}
 	d.mu.Unlock()
 	d.pools.Remove(req.PoolID)
+	log.Printf("ReleasePool: done poolID=%s", req.PoolID)
 	return nil
 }
 
 func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestAddressResponse, error) {
 	if req.Address != "" {
-		return nil, fmt.Errorf("static address not supported by DHCP IPAM driver")
+		reqIP, _, err := net.ParseCIDR(req.Address)
+		if err == nil && reqIP.Equal(net.ParseIP(d.iface.Gateway)) {
+			log.Printf("RequestAddress: returning gateway addr=%s for poolID=%s", req.Address, req.PoolID)
+			return &ipam.RequestAddressResponse{
+				Address: req.Address,
+			}, nil
+		}
+		log.Printf("RequestAddress: refusing static address %q for poolID=%s", req.Address, req.PoolID)
+		return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
 	}
 	log.Printf("RequestAddress: poolID=%s options=%v", req.PoolID, req.Options)
 
@@ -433,6 +458,7 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 }
 
 func (d *Driver) ReleaseAddress(req *ipam.ReleaseAddressRequest) error {
+	log.Printf("ReleaseAddress: poolID=%s addr=%s", req.PoolID, req.Address)
 	addr := req.Address
 	if ip, _, err := net.ParseCIDR(addr); err == nil {
 		addr = ip.String()
@@ -450,6 +476,7 @@ func (d *Driver) ReleaseAddress(req *ipam.ReleaseAddressRequest) error {
 		}
 	}
 	d.leases.Remove(req.PoolID, addr)
+	log.Printf("ReleaseAddress: done poolID=%s addr=%s", req.PoolID, addr)
 	return nil
 }
 

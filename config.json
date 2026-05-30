@@ -11,5 +11,7 @@
   },
   "linux": {
     "capabilities": ["CAP_NET_RAW", "CAP_NET_ADMIN"]
-  }
+  },
+  "mounts": [],
+  "env": []
 }

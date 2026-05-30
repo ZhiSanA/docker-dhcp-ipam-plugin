@@ -5,7 +5,7 @@
 
 set -e
 
-NAME="${1:-tuzi/dhcp-ipam}"
+NAME="${1:-fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin}"
 BINARY="docker-dhcp-ipam-plugin"
 
 echo "==> Cleaning up old plugin..."
@@ -16,7 +16,7 @@ WORKDIR=$(mktemp -d)
 mkdir -p "$WORKDIR/rootfs"
 
 echo "==> Building binary..."
-CGO_ENABLED=0 go build -ldflags="-s -w" -o "$WORKDIR/rootfs/$BINARY" .
+CGO_ENABLED=0 GOARCH=amd64 go build -ldflags="-s -w" -o "$WORKDIR/rootfs/$BINARY" .
 echo "    ✅ Built $BINARY"
 
 echo "==> Creating plugin: $NAME"

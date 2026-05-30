@@ -26,5 +26,5 @@ networks:
     driver: macvlan
     driver_opts:
       parent: wlan0
-    ipam:
-      driver: tuzi/dhcp-ipam:latest
+    # ipam:
+    #   driver: fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
