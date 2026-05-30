@@ -119,12 +119,10 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 		isV6 = true
 	}
 
-	var gatewayAddr, subnetCIDR string
+	var subnetCIDR string
 	if isV6 {
-		gatewayAddr = d.iface.GatewayV6
 		subnetCIDR = d.iface.SubnetV6
 	} else {
-		gatewayAddr = d.iface.GatewayV4
 		subnetCIDR = d.iface.SubnetV4
 	}
 
@@ -134,7 +132,7 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 			log.Printf("RequestAddress: refusing static address %q", req.Address)
 			return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
 		}
-		if ip := net.ParseIP(req.Address); ip != nil && ip.Equal(net.ParseIP(gatewayAddr)) {
+		if ip := net.ParseIP(req.Address); ip != nil {
 			_, ipNet, _ := net.ParseCIDR(subnetCIDR)
 			ones, _ := ipNet.Mask.Size()
 			cidrAddr := fmt.Sprintf("%s/%d", ip.String(), ones)
