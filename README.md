@@ -23,19 +23,10 @@
 
 ## 快速开始
 
-### 1. 构建并安装插件
+### 1. 安装插件
 
 ```bash
-# 克隆仓库
-git clone https://github.com/tuzi/docker-dhcp-ipam-plugin.git
-cd docker-dhcp-ipam-plugin
-
-# 编译二进制 → 构建 rootfs → 创建并启用 Docker managed plugin
-# 插件名默认为 fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin
-./build.sh
-
-# 也可指定自定义名称：
-# ./build.sh my-registry/dhcp-ipam:latest
+docker plugin install fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
 ```
 
 ### 2. 创建 macvlan 网络
@@ -163,12 +154,24 @@ docker plugin inspect <插件名>
 
 ## 从源码构建
 
-```bash
-# 编译独立二进制
-go build -o docker-dhcp-ipam-plugin .
+如果需要自行构建，可以克隆仓库后运行构建脚本：
 
-# 构建 Docker managed plugin
+```bash
+git clone https://github.com/tuzi/docker-dhcp-ipam-plugin.git
+cd docker-dhcp-ipam-plugin
 ./build.sh
+```
+
+构建脚本会编译二进制 → 创建 rootfs → 创建并启用 Docker managed plugin。也可指定自定义名称：
+
+```bash
+# ./build.sh my-registry/dhcp-ipam:latest
+```
+
+或仅编译独立二进制：
+
+```bash
+go build -o docker-dhcp-ipam-plugin .
 ```
 
 ## 许可证
