@@ -374,9 +374,17 @@ func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolRes
 		poolCIDR = requested.String()
 	}
 
-	// Pool (CIDR) can only be requested once
+	// Pool (CIDR) can only be requested once — subsequent requests for the
+	// same CIDR return the existing pool idempotently (Docker may call
+	// RequestPool multiple times during a single network creation).
 	if d.pools.Exists(poolCIDR) {
-		return nil, fmt.Errorf("pool %q already exists; release it before requesting again", poolCIDR)
+		existing := d.pools.Get(poolCIDR)
+		log.Printf("RequestPool: poolID=%s already exists, returning existing pool", poolCIDR)
+		return &ipam.RequestPoolResponse{
+			PoolID: poolCIDR,
+			Pool:   existing.Subnet,
+			Data:   map[string]string{"gateway": existing.Gateway},
+		}, nil
 	}
 
 	d.pools.Add(poolCIDR, &PoolInfo{Subnet: d.iface.Subnet, Gateway: d.iface.Gateway})
