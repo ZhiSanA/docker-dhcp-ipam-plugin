@@ -17,6 +17,7 @@ func loadConfig() *Config {
 		LeaseRenewInterval: 30 * time.Second,
 		DHCPTimeout:        10 * time.Second,
 		DHCPRetries:        3,
+		MACFromName:        true,
 	}
 	if v := os.Getenv(envInterface); v != "" {
 		cfg.HostInterface = v
@@ -38,6 +39,9 @@ func loadConfig() *Config {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.DHCPRetries = n
 		}
+	}
+	if v := os.Getenv(envMACFromName); v != "" {
+		cfg.MACFromName = v == "1" || v == "true"
 	}
 	return cfg
 }

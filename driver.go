@@ -25,6 +25,7 @@ const (
 	envRenewInterval = "DHCP_IPAM_RENEW_INTERVAL"
 	envDHCPTimeout   = "DHCP_IPAM_TIMEOUT"
 	envDHCPRetries   = "DHCP_IPAM_RETRIES"
+	envMACFromName   = "DHCP_IPAM_MAC_FROM_NAME"
 
 	defaultSocketPath = "/run/docker/plugins/dhcp-ipam.sock"
 	defaultLogLevel   = "info"
@@ -37,6 +38,7 @@ type Config struct {
 	LeaseRenewInterval time.Duration
 	DHCPTimeout        time.Duration
 	DHCPRetries        int
+	MACFromName        bool
 }
 
 // ── Interface Detection ───────────────────────────────────────────────
@@ -388,8 +390,12 @@ func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
 func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestAddressResponse, error) {
 	log.Printf("RequestAddress: poolID=%s address=%q options=%v", req.PoolID, req.Address, req.Options)
 
-	// Gateway — return as-is with subnet prefix.
+	// Gateway — verify RequestAddressType and return as-is with subnet prefix.
 	if req.Address != "" {
+		if req.Options["RequestAddressType"] != "com.docker.network.gateway" {
+			log.Printf("RequestAddress: refusing static address %q", req.Address)
+			return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
+		}
 		if ip := net.ParseIP(req.Address); ip != nil && ip.Equal(net.ParseIP(d.iface.Gateway)) {
 			_, ipNet, _ := net.ParseCIDR(d.iface.Subnet)
 			ones, _ := ipNet.Mask.Size()
@@ -404,7 +410,7 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 	}
 
 	// No address specified — obtain via DHCP.
-	mac := resolveMAC(req.Options, req.PoolID)
+	mac := resolveMAC(req.Options, req.PoolID, d.cfg)
 	ctx, cancel := context.WithTimeout(context.Background(), d.cfg.DHCPTimeout)
 	defer cancel()
 
@@ -443,8 +449,16 @@ func (d *Driver) ReleaseAddress(req *ipam.ReleaseAddressRequest) error {
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-func resolveMAC(opts map[string]string, poolID string) net.HardwareAddr {
-	for _, key := range []string{"mac", "macaddress", "com.docker.network.endpoint.macaddress"} {
+func resolveMAC(opts map[string]string, poolID string, cfg *Config) net.HardwareAddr {
+	// If MAC-from-name is enabled, derive MAC from the stable endpoint name.
+	if cfg.MACFromName {
+		if name := opts["com.docker.network.endpoint.name"]; name != "" {
+			return generateMAC(name)
+		}
+		log.Print("resolveMAC: MACFromName enabled but no endpoint name in options, falling back to options MAC")
+	}
+
+	for _, key := range []string{"com.docker.network.endpoint.macaddress", "mac", "macaddress"} {
 		if v, ok := opts[key]; ok && v != "" {
 			if hw, err := net.ParseMAC(v); err == nil {
 				return hw
