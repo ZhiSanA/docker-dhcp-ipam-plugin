@@ -357,41 +357,24 @@ func (d *Driver) GetDefaultAddressSpaces() (*ipam.AddressSpacesResponse, error) 
 }
 
 func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolResponse, error) {
-	// Resolve the pool CIDR: use req.Pool if given, otherwise fall back to detected subnet
-	poolCIDR := d.iface.Subnet
-	if req.Pool != "" {
-		_, requested, err := net.ParseCIDR(req.Pool)
-		if err != nil {
-			return nil, fmt.Errorf("invalid pool %q: %w", req.Pool, err)
-		}
-		_, detected, err := net.ParseCIDR(d.iface.Subnet)
-		if err != nil {
-			return nil, fmt.Errorf("invalid detected subnet %q: %w", d.iface.Subnet, err)
-		}
-		if requested.String() != detected.String() {
-			return nil, fmt.Errorf("requested pool %q != detected subnet %q", requested.String(), detected.String())
-		}
-		poolCIDR = requested.String()
+	if req.Pool == "" {
+		return nil, fmt.Errorf("pool must be specified")
+	}
+	_, requested, err := net.ParseCIDR(req.Pool)
+	if err != nil {
+		return nil, fmt.Errorf("invalid pool %q: %w", req.Pool, err)
+	}
+	_, detected, err := net.ParseCIDR(d.iface.Subnet)
+	if err != nil {
+		return nil, fmt.Errorf("invalid detected subnet %q: %w", d.iface.Subnet, err)
+	}
+	if requested.String() != detected.String() {
+		return nil, fmt.Errorf("requested pool %q != detected subnet %q", requested.String(), detected.String())
 	}
 
-	// Pool (CIDR) can only be requested once — subsequent requests for the
-	// same CIDR return the existing pool idempotently (Docker may call
-	// RequestPool multiple times during a single network creation).
-	if d.pools.Exists(poolCIDR) {
-		existing, _ := d.pools.Get(poolCIDR)
-		log.Printf("RequestPool: poolID=%s already exists, returning existing pool", poolCIDR)
-		return &ipam.RequestPoolResponse{
-			PoolID: poolCIDR,
-			Pool:   existing.Subnet,
-			Data:   map[string]string{"gateway": existing.Gateway},
-		}, nil
-	}
-
-	d.pools.Add(poolCIDR, &PoolInfo{Subnet: d.iface.Subnet, Gateway: d.iface.Gateway})
-
-	log.Printf("RequestPool: poolID=%s subnet=%s gateway=%s req.Pool=%q", poolCIDR, d.iface.Subnet, d.iface.Gateway, req.Pool)
+	log.Printf("RequestPool: poolID=%s req.Pool=%q gateway=%s", d.iface.Subnet, req.Pool, d.iface.Gateway)
 	return &ipam.RequestPoolResponse{
-		PoolID: poolCIDR,
+		PoolID: d.iface.Subnet,
 		Pool:   d.iface.Subnet,
 		Data:   map[string]string{"gateway": d.iface.Gateway},
 	}, nil
@@ -399,92 +382,25 @@ func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolRes
 
 func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
 	log.Printf("ReleasePool: poolID=%s", req.PoolID)
-	leases := d.leases.ReleaseAll(req.PoolID)
-	for _, l := range leases {
-		if err := d.dhcp.Release(d.iface.Name, l); err != nil {
-			log.Printf("ReleasePool: lease release error: %v", err)
-		}
-	}
-	d.mu.Lock()
-	for key, cancel := range d.cancelFuncs {
-		pid, _, ok := splitCancelKey(key)
-		if ok && pid == req.PoolID {
-			cancel()
-			delete(d.cancelFuncs, key)
-		}
-	}
-	d.mu.Unlock()
-	d.pools.Remove(req.PoolID)
-	log.Printf("ReleasePool: done poolID=%s", req.PoolID)
 	return nil
 }
 
 func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestAddressResponse, error) {
-	log.Printf("RequestAddress: poolID=%s options=%v ifaceGateway=%v", req.PoolID, req.Options, d.iface.Gateway)
-	if req.Address != "" {
-		reqIP, _, err := net.ParseCIDR(req.Address)
-		if err == nil && reqIP.Equal(net.ParseIP(d.iface.Gateway)) {
-			log.Printf("RequestAddress: returning gateway addr=%s for poolID=%s", req.Address, req.PoolID)
-			return &ipam.RequestAddressResponse{
-				Address: req.Address,
-			}, nil
-		}
-		log.Printf("RequestAddress: refusing static address %q for poolID=%s", req.Address, req.PoolID)
-		return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
+	log.Printf("RequestAddress: poolID=%s address=%q options=%v", req.PoolID, req.Address, req.Options)
+
+	// IPs are managed by macvlan — accept any request as-is.
+	respAddr := req.Address
+	if respAddr == "" {
+		respAddr = d.iface.Subnet
 	}
-
-	mac := resolveMAC(req.Options, req.PoolID)
-	ctx, cancel := context.WithTimeout(context.Background(), d.cfg.DHCPTimeout)
-	defer cancel()
-
-	lease, err := d.dhcp.Obtain(ctx, d.iface.Name, mac)
-	if err != nil {
-		return nil, fmt.Errorf("DHCP request failed: %w", err)
-	}
-
-	addr := lease.ACK.YourIPAddr.String()
-	_, ipNet, err := net.ParseCIDR(d.iface.Subnet)
-	if err != nil {
-		return nil, fmt.Errorf("parse subnet %q: %w", d.iface.Subnet, err)
-	}
-	ones, _ := ipNet.Mask.Size()
-	cidrAddr := fmt.Sprintf("%s/%d", addr, ones)
-
-	d.leases.Add(req.PoolID, addr, lease)
-
-	renewCtx, renewCancel := context.WithCancel(context.Background())
-	d.mu.Lock()
-	d.cancelFuncs[cancelKey(req.PoolID, addr)] = renewCancel
-	d.mu.Unlock()
-	go d.dhcp.RenewLoop(renewCtx, d.iface.Name, lease, d.leases, req.PoolID, addr)
-
-	log.Printf("RequestAddress: poolID=%s addr=%s cidr=%s MAC=%s", req.PoolID, addr, cidrAddr, mac)
 	return &ipam.RequestAddressResponse{
-		Address: cidrAddr,
-		Data:    map[string]string{"mac_address": mac.String()},
+		Address: respAddr,
+		Data:    map[string]string{"mac_address": d.iface.MAC.String()},
 	}, nil
 }
 
 func (d *Driver) ReleaseAddress(req *ipam.ReleaseAddressRequest) error {
 	log.Printf("ReleaseAddress: poolID=%s addr=%s", req.PoolID, req.Address)
-	addr := req.Address
-	if ip, _, err := net.ParseCIDR(addr); err == nil {
-		addr = ip.String()
-	}
-	d.mu.Lock()
-	if cancel, ok := d.cancelFuncs[cancelKey(req.PoolID, addr)]; ok {
-		cancel()
-		delete(d.cancelFuncs, cancelKey(req.PoolID, addr))
-	}
-	d.mu.Unlock()
-
-	if lease := d.leases.Get(req.PoolID, addr); lease != nil {
-		if err := d.dhcp.Release(d.iface.Name, lease); err != nil {
-			log.Printf("ReleaseAddress: release error: %v", err)
-		}
-	}
-	d.leases.Remove(req.PoolID, addr)
-	log.Printf("ReleaseAddress: done poolID=%s addr=%s", req.PoolID, addr)
 	return nil
 }
 
