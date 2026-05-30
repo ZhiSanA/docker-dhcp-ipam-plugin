@@ -378,7 +378,7 @@ func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolRes
 	// same CIDR return the existing pool idempotently (Docker may call
 	// RequestPool multiple times during a single network creation).
 	if d.pools.Exists(poolCIDR) {
-		existing := d.pools.Get(poolCIDR)
+		existing, _ := d.pools.Get(poolCIDR)
 		log.Printf("RequestPool: poolID=%s already exists, returning existing pool", poolCIDR)
 		return &ipam.RequestPoolResponse{
 			PoolID: poolCIDR,
