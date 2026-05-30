@@ -1,30 +1,21 @@
-# Docker Compose for DHCP IPAM Plugin Testing
-# Usage: docker compose up -d
-#        docker compose down
-
 services:
   nginx:
     image: nginx:alpine
-    container_name: dhcp-test-nginx
-    hostname: dhcp-test-nginx
     networks:
-      - dhcp-net
-    ports:
-      - "8080:80"
-    command:
-      - sh
-      - -c
-      - |
-        echo "=== Container started ==="
-        echo "Hostname: $$(hostname)"
-        ip addr show eth0 | grep 'inet '
-        echo "=== Starting nginx ==="
-        nginx -g 'daemon off;'
+      - macvlan-with-dhcp
+  caddy:
+    image: caddy:alpine
+    networks:
+      - macvlan-with-dhcp
 
 networks:
-  dhcp-net:
+  macvlan-with-dhcp:
     driver: macvlan
     driver_opts:
-      parent: wlan0
-    # ipam:
-    #   driver: fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
+      parent: ens18
+    ipam:
+      driver: fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
+      config:
+        - subnet: "10.0.0.0/15"
+          gateway: "10.0.0.1"
+          # ip_range: "10.0.0.0/24"
