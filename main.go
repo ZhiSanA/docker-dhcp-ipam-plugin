@@ -4,47 +4,9 @@ import (
 	"context"
 	"log"
 	"os"
-	"strconv"
-	"time"
 
 	"github.com/docker/go-plugins-helpers/ipam"
 )
-
-func loadConfig() *Config {
-	cfg := &Config{
-		SocketPath:         defaultSocketPath,
-		LogLevel:           defaultLogLevel,
-		LeaseRenewInterval: 30 * time.Second,
-		DHCPTimeout:        10 * time.Second,
-		DHCPRetries:        3,
-		MACFromName:        true,
-	}
-	if v := os.Getenv(envInterface); v != "" {
-		cfg.HostInterface = v
-	}
-	if v := os.Getenv(envSocketPath); v != "" {
-		cfg.SocketPath = v
-	}
-	if v := os.Getenv(envRenewInterval); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			cfg.LeaseRenewInterval = d
-		}
-	}
-	if v := os.Getenv(envDHCPTimeout); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			cfg.DHCPTimeout = d
-		}
-	}
-	if v := os.Getenv(envDHCPRetries); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			cfg.DHCPRetries = n
-		}
-	}
-	if v := os.Getenv(envMACFromName); v != "" {
-		cfg.MACFromName = v == "1" || v == "true"
-	}
-	return cfg
-}
 
 func main() {
 	cfg := loadConfig()

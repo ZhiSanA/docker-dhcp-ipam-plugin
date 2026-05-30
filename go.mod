@@ -4,7 +4,6 @@ go 1.23.0
 
 require (
 	github.com/docker/go-plugins-helpers v0.0.0-20240701071450-45e2431495c8
-	github.com/google/uuid v1.6.0
 	github.com/insomniacslk/dhcp v0.0.0-20260407060928-11b94ed970f2
 )
 

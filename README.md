@@ -1,119 +1,177 @@
-# Docker DHCP IPAM 插件
+# Docker DHCP IPAM Plugin
 
-一个 Docker IPAM（IP 地址管理）驱动插件，通过 DHCP 从宿主机局域网为容器分配 IP 地址。每个容器通过完整的 DHCP DORA 流程获取一个真实可路由的局域网 IP。
+A Docker IPAM driver plugin that allocates container IP addresses via DHCP from the host's LAN.
 
-## 工作原理
+Designed for use with **macvlan** networks — containers receive IPs directly from the LAN's DHCP server, ensuring they are routable on the physical network without NAT.
 
-当容器在此 IPAM 驱动的网络上创建时：
+## How It Works
 
-1. 为容器生成唯一 MAC 地址（`02:1a:2b:xx:yy:zz`，本地管理单播地址）
-2. 在宿主机物理网卡上执行 DHCP Discover-Offer-Request-Ack (DORA) 流程
-3. 租赁到的 IP 地址返回给 Docker 并分配给容器
-4. 后台 goroutine 负责在 ~80% T1/租赁时间时自动续约
-5. 容器删除时，向 DHCP 服务器发送 DHCPRELEASE
-
-## 前提条件
-
-- Docker CE/EE（在 Docker 29.x 上测试）
-- 宿主机连接到有 DHCP 服务器的局域网
-- Linux 系统（需要 `CAP_NET_RAW` 使用原始 DHCP 套接字）
-
-## 构建与安装
-
-### 从源码构建
-
-```bash
-# 编译插件二进制
-make build
-
-# 打包并安装为 Docker managed plugin
-make plugin
+```
+Container → macvlan → DHCP IPAM plugin → DHCP request on LAN → DHCP server → IP lease
 ```
 
-### 手动安装
+1. The plugin detects the host's network interface and subnet from the default route.
+2. When Docker creates a macvlan network, the plugin validates the requested subnet matches the host's LAN.
+3. When a container is attached, the plugin sends a DHCP `DISCOVER`/`REQUEST` on behalf of the container using a deterministic or user-specified MAC address.
+4. The IP is returned to Docker with an ongoing renewal loop that keeps the lease alive.
+
+## Prerequisites
+
+- Docker CE with [managed plugin support](https://docs.docker.com/engine/extend/)
+- Host connected to a LAN with a DHCP server
+- `CAP_NET_RAW` and `CAP_NET_ADMIN` capabilities (set automatically by the plugin)
+
+## Quick Start
+
+### 1. Build and Install the Plugin
 
 ```bash
-# 编译二进制
-CGO_ENABLED=0 go build -ldflags="-s -w" -o build/docker-dhcp-ipam-plugin ./cmd/docker-dhcp-ipam-plugin
+# Clone the repository
+git clone https://github.com/tuzi/docker-dhcp-ipam-plugin.git
+cd docker-dhcp-ipam-plugin
 
-# 创建 rootfs
-mkdir -p plugin-rootfs
-docker build -t dhcp-ipam-rootfs .
-docker create --name dhcp-ipam-extract dhcp-ipam-rootfs
-docker export dhcp-ipam-extract | tar x -C plugin-rootfs/
-docker rm dhcp-ipam-extract
-cp config.json plugin-rootfs/
+# Build binary → create rootfs → create & enable Docker managed plugin
+# The plugin name defaults to fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin
+./build.sh
 
-# 创建并启用插件
-docker plugin create dhcp-ipam plugin-rootfs/
-docker plugin enable dhcp-ipam
+# Or specify a custom name:
+# ./build.sh my-registry/dhcp-ipam:latest
 ```
 
-## 使用方法
-
-创建使用 DHCP IPAM 驱动的 macvlan 网络：
+### 2. Create a macvlan Network
 
 ```bash
 docker network create \
   --driver macvlan \
+  --ipam-driver fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest \
+  --ipam-opt subnet=192.168.1.0/24 \
   --opt parent=eth0 \
-  --ipam-driver dhcp-ipam \
-  dhcp-net
+  my-network
 ```
 
-在此网络上运行容器：
+**Important:** The `subnet` specified in `--ipam-opt` must match the subnet detected on the host's default route interface. If omitted, the plugin will reject the request.
+
+### 3. Run a Container
 
 ```bash
-docker run --network dhcp-net --rm alpine ip addr
+docker run --rm --network my-network --name my-app nginx:alpine
 ```
 
-容器将获得局域网 DHCP 服务器分配的 IP 地址。
+The container will receive an IP from the LAN's DHCP server.
 
-## 配置
-
-通过环境变量配置插件：
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `DHCP_IPAM_INTERFACE` | 自动检测 | DHCP 使用的网卡（如 `eth0`、`wlan0`） |
-| `DHCP_IPAM_SOCKET_PATH` | `/run/docker/plugins/dhcp_ipam.sock` | Unix 套接字路径 |
-| `DHCP_IPAM_LOG_LEVEL` | `info` | 日志级别（`debug`、`info`、`warn`、`error`） |
-| `DHCP_IPAM_TIMEOUT` | `10s` | DHCP 请求超时时间 |
-| `DHCP_IPAM_RETRIES` | `3` | DHCP 请求重试次数 |
+### 4. Verify
 
 ```bash
-docker plugin set dhcp-ipam DHCP_IPAM_INTERFACE=eth1
-docker plugin set dhcp-ipam DHCP_IPAM_LOG_LEVEL=debug
+docker inspect my-network
+docker exec my-app ip addr show eth0
 ```
 
-## 架构
+## Configuration
 
-```
-Docker daemon → Unix 套接字 → IPAM handler → IPAM driver → DHCP 客户端 → 局域网 DHCP 服务器
-```
+### Environment Variables
 
-- **cmd/main.go** — HTTP 服务入口，自定义 handler（使用小写 manifest 以兼容 Docker 29.x）
-- **pkg/ipam** — 核心驱动，实现 6 个 IPAM API 方法（GetCapabilities、RequestPool、RequestAddress 等）
-- **pkg/dhcp** — DHCP 客户端封装（DORA、续约、释放、自动续约循环）
-- **pkg/iface** — 自动检测宿主机网卡、子网、网关（通过 `/proc/net/route`）
-- **pkg/store** — 线程安全的内存池和租赁存储
-- **pkg/config** — 环境变量配置
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DHCP_IPAM_INTERFACE` | (auto-detected) | Host interface to use for DHCP. Auto-detected from default route if empty. |
+| `DHCP_IPAM_SOCKET_PATH` | `/run/docker/plugins/dhcp-ipam.sock` | Unix socket path for Docker plugin communication. |
+| `DHCP_IPAM_TIMEOUT` | `10s` | DHCP request timeout (Go duration format, e.g. `5s`, `30s`). |
+| `DHCP_IPAM_RETRIES` | `3` | Number of DHCP request retries on failure. |
+| `DHCP_IPAM_RENEW_INTERVAL` | `30s` | Interval for checking lease renewal status. |
+| `DHCP_IPAM_MAC_FROM_NAME` | `true` | When enabled, generates a deterministic MAC from the container name (`com.docker.network.endpoint.name`). This ensures rebuilding a container with the same name gets the same IP. Set to `false` to use Docker-assigned MAC addresses instead. |
 
-## 测试
+### Set environment variables on plugin creation
 
 ```bash
-make test                    # 运行所有测试（含竞态检测）
-go test -v ./pkg/iface/...   # 测试网卡检测
-go test -v ./pkg/store/...   # 测试存储实现
+# Set a custom interface
+docker plugin set fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin DHCP_IPAM_INTERFACE=eth1
 ```
 
-## 已知问题
+Or set them at build time by editing `config.json` and adding to the `"env"` array:
 
-- **Docker 29.x managed plugin bug**：`docker plugin create` 保存接口类型时会自动添加前缀 `.` 和后缀 `/`，导致 `"ipamdriver"` 能力匹配失败。但 Plugin.Activate 端点返回的 manifest 是正确的。解决方案正在研究中。
-- 需要 `CAP_NET_RAW` 权限以使用原始 DHCP 套接字（已在插件配置中包含）。
-- 插件使用 `--net=host` 以访问宿主机物理网卡。
-- 仅支持 IPv4 DHCP（暂不支持 IPv6/DHCPv6）。
+```json
+"env": [
+  {"name": "DHCP_IPAM_INTERFACE", "value": "eth0"},
+  {"name": "DHCP_IPAM_TIMEOUT", "value": "15s"}
+]
+```
 
-## 许可证
+## How MAC Addresses Are Determined
+
+The plugin supports three MAC resolution strategies, checked in this order:
+
+1. **MAC from container name** (default, `DHCP_IPAM_MAC_FROM_NAME=true`) — A deterministic MAC is derived from the container name via FNV-32a hash. Since the name stays the same across `docker compose up/down`, the container receives the same DHCP lease every time.
+2. **MAC from Docker metadata** — Falls back to the MAC address Docker assigns to the container endpoint (`com.docker.network.endpoint.macaddress`).
+3. **Fallback hash** — Generates a MAC from the pool ID (CIDR) as last resort.
+
+## Files
+
+```
+├── main.go          # Entry point
+├── config.go        # Config struct, env var loading
+├── driver.go        # IPAM driver (RequestPool, RequestAddress, ReleasePool, ReleaseAddress)
+├── dhcp.go          # DHCP client wrapper (Obtain, Renew, Release, RenewLoop)
+├── interface.go     # Host interface detection (/proc/net/route, net.Interface)
+├── store.go         # In-memory PoolStore and LeaseStore
+├── mac.go           # MAC resolution and generation
+├── config.json      # Docker managed plugin manifest
+├── build.sh         # Build script for Docker managed plugin
+├── docker-compose.yaml  # Test compose file
+└── go.mod / go.sum  # Go module dependencies
+```
+
+## Troubleshooting
+
+### Check plugin logs
+
+```bash
+journalctl -fu docker | grep dhcp-ipam
+```
+
+### "pool must be specified"
+
+The `subnet` option is required when creating the network. Example:
+
+```bash
+docker network create ... --ipam-opt subnet=192.168.1.0/24
+```
+
+### "requested pool X != detected subnet Y"
+
+The subnet specified in `--ipam-opt subnet=...` does not match the host's detected subnet. Verify the host interface and its subnet:
+
+```bash
+ip route show default
+ip addr show <interface>
+```
+
+### "static address not supported"
+
+The plugin only allocates addresses via DHCP. Static IP assignments are not supported for individual containers (the gateway is handled automatically by Docker).
+
+### Containers get the same IP
+
+Ensure `DHCP_IPAM_MAC_FROM_NAME=true` (the default) and containers have distinct names. If containers share the same name, they will derive the same MAC and receive the same lease.
+
+### Plugin fails to load
+
+Make sure the plugin has the required capabilities:
+
+```bash
+docker plugin inspect <plugin-name>
+```
+
+Look for `Capabilities` including `CAP_NET_RAW` and `CAP_NET_ADMIN`.
+
+## Building from Source
+
+```bash
+# Build standalone binary
+go build -o docker-dhcp-ipam-plugin .
+
+# Build Docker managed plugin
+./build.sh
+```
+
+## License
 
 MIT
