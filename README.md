@@ -57,6 +57,20 @@ docker inspect my-network
 docker exec my-app ip addr show eth0
 ```
 
+### 5. 或用 docker-compose 快速验证
+
+项目中附带了一个 `docker-compose.yaml`，安装插件后修改网卡名（`parent`）和子网配置，即可一键拉起测试：
+
+```bash
+# 先编辑 docker-compose.yaml，修改 parent 和 subnet 为你的环境
+docker compose up -d
+docker compose ps
+docker exec dhcp-test-nginx ip addr show eth0
+docker exec dhcp-test-caddy ip addr show eth0
+# 完成后清理
+docker compose down
+```
+
 ## 配置
 
 ### 环境变量
