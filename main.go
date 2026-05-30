@@ -16,7 +16,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to detect host interface: %v", err)
 	}
-	log.Printf("detected interface: %s (MAC=%s, subnet=%s)", ifaceInfo.Name, ifaceInfo.MAC, ifaceInfo.Subnet)
+	log.Printf("detected interface: %s (MAC=%s, v4=%s v6=%s)", ifaceInfo.Name, ifaceInfo.MAC, ifaceInfo.SubnetV4, ifaceInfo.SubnetV6)
 
 	if cfg.HostInterface == "" {
 		cfg.HostInterface = ifaceInfo.Name

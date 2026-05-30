@@ -11,41 +11,36 @@ import (
 // ── Interface Info ────────────────────────────────────────────────────
 
 type InterfaceInfo struct {
-	Name    string
-	MAC     net.HardwareAddr
-	Subnet  string // CIDR, e.g. "192.168.1.0/24"
-	Gateway string
-	IP      net.IP
+	Name      string
+	MAC       net.HardwareAddr
+	SubnetV4  string // CIDR, e.g. "192.168.1.0/24"
+	GatewayV4 string
+	IPV4      net.IP
+	SubnetV6  string // CIDR, e.g. "2001:db8::/64"
+	GatewayV6 string
+	IPV6      net.IP
 }
+
+// Subnet returns the IPv4 subnet (backwards compatibility).
+func (i *InterfaceInfo) Subnet() string { return i.SubnetV4 }
+
+// Gateway returns the IPv4 gateway (backwards compatibility).
+func (i *InterfaceInfo) Gateway() string { return i.GatewayV4 }
 
 // ── Detection ─────────────────────────────────────────────────────────
 
 func DetectInterface(ifaceName string) (*InterfaceInfo, error) {
+	var name string
 	if ifaceName != "" {
-		return detectNamedInterface(ifaceName)
+		name = ifaceName
+	} else {
+		var err error
+		name, _, err = parseProcNetRoute()
+		if err != nil {
+			return nil, err
+		}
 	}
-	return detectFromDefaultRoute()
-}
-
-func detectFromDefaultRoute() (*InterfaceInfo, error) {
-	name, gatewayHex, err := parseProcNetRoute()
-	if err != nil {
-		return nil, err
-	}
-	info, err := resolveInterface(name)
-	if err != nil {
-		return nil, err
-	}
-	info.Gateway = parseGatewayHex(gatewayHex)
-	return info, nil
-}
-
-func detectNamedInterface(name string) (*InterfaceInfo, error) {
-	info, err := resolveInterface(name)
-	if err != nil {
-		return nil, err
-	}
-	return info, nil
+	return resolveInterface(name)
 }
 
 func resolveInterface(name string) (*InterfaceInfo, error) {
@@ -57,29 +52,58 @@ func resolveInterface(name string) (*InterfaceInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("addresses for %q: %w", name, err)
 	}
-	var ipNet *net.IPNet
+
+	info := &InterfaceInfo{
+		Name: iface.Name,
+		MAC:  iface.HardwareAddr,
+	}
+
+	// Detect IPv4 and IPv6 from interface addresses
 	for _, a := range addrs {
-		ipNet, err = toIPv4Net(a)
-		if err != nil {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok {
 			continue
 		}
-		break
+		if ipNet.IP.IsLoopback() {
+			continue
+		}
+		if ip4 := ipNet.IP.To4(); ip4 != nil {
+			if info.IPV4 != nil {
+				continue
+			}
+			ones, _ := ipNet.Mask.Size()
+			network := ip4.Mask(ipNet.Mask)
+			info.IPV4 = ip4
+			info.SubnetV4 = fmt.Sprintf("%s/%d", network.String(), ones)
+		} else if ip6 := ipNet.IP.To16(); ip6 != nil {
+			if info.IPV6 != nil {
+				continue
+			}
+			ones, _ := ipNet.Mask.Size()
+			network := ip6.Mask(ipNet.Mask)
+			info.IPV6 = ip6
+			info.SubnetV6 = fmt.Sprintf("%s/%d", network.String(), ones)
+		}
 	}
-	if ipNet == nil {
+	if info.IPV4 == nil {
 		return nil, fmt.Errorf("interface %q has no IPv4 address", name)
 	}
-	ones, _ := ipNet.Mask.Size()
-	network := ipNet.IP.Mask(ipNet.Mask)
 
-	return &InterfaceInfo{
-		Name:   iface.Name,
-		MAC:    iface.HardwareAddr,
-		Subnet: fmt.Sprintf("%s/%d", network.String(), ones),
-		IP:     ipNet.IP,
-	}, nil
+	// Detect IPv4 gateway from default route
+	_, gwHex, err := parseProcNetRoute()
+	if err == nil && gwHex != "" {
+		info.GatewayV4 = parseGatewayHex(gwHex)
+	}
+
+	// Detect IPv6 gateway from default route
+	if gw6, err := parseProcNetIPv6Route(name); err == nil {
+		info.GatewayV6 = gw6
+	}
+
+	return info, nil
 }
 
-// ── /proc/net/route parsing ───────────────────────────────────────────
+// ── /proc/net/route parsing (IPv4) ────────────────────────────────────
 
 func parseProcNetRoute() (ifaceName, gatewayHex string, err error) {
 	f, err := os.Open("/proc/net/route")
@@ -128,13 +152,60 @@ func parseGatewayHex(h string) string {
 	return net.IPv4(b[0], b[1], b[2], b[3]).String()
 }
 
-func toIPv4Net(addr net.Addr) (*net.IPNet, error) {
-	ipNet, ok := addr.(*net.IPNet)
-	if !ok {
-		return nil, fmt.Errorf("not an IPNet")
+// ── /proc/net/ipv6_route parsing ──────────────────────────────────────
+
+func parseProcNetIPv6Route(ifaceName string) (string, error) {
+	f, err := os.Open("/proc/net/ipv6_route")
+	if err != nil {
+		return "", err
 	}
-	if ipNet.IP.To4() == nil || ipNet.IP.IsLoopback() {
-		return nil, fmt.Errorf("not IPv4 or loopback")
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 10 {
+			continue
+		}
+		if fields[9] != ifaceName {
+			continue
+		}
+		// Destination "00000000000000000000000000000000" with prefix "00" = default
+		if fields[0] == "00000000000000000000000000000000" && fields[1] == "00" {
+			gw := fields[4]
+			if gw == "00000000000000000000000000000000" {
+				continue
+			}
+			return parseIPv6Hex(gw), nil
+		}
 	}
-	return ipNet, nil
+	return "", fmt.Errorf("no IPv6 default route found for %q", ifaceName)
+}
+
+func parseIPv6Hex(h string) string {
+	if len(h) < 32 {
+		return ""
+	}
+	var buf [16]byte
+	for i := 0; i < 16; i++ {
+		buf[i] = hexByte(h[i*2 : i*2+2])
+	}
+	return net.IP(buf[:]).String()
+}
+
+func hexByte(s string) byte {
+	var v byte
+	for i := 0; i < 2; i++ {
+		c := s[i]
+		switch {
+		case c >= '0' && c <= '9':
+			v = v*16 + (c - '0')
+		case c >= 'a' && c <= 'f':
+			v = v*16 + (c - 'a' + 10)
+		case c >= 'A' && c <= 'F':
+			v = v*16 + (c - 'A' + 10)
+		}
+	}
+	return v
 }

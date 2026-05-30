@@ -50,27 +50,58 @@ func (d *Driver) GetDefaultAddressSpaces() (*ipam.AddressSpacesResponse, error) 
 	return resp, nil
 }
 
+// matchPoolCIDR checks whether reqPool matches the host subnet for the given IP family.
+// It returns the matching subnet string and gateway string, or an error.
+func (d *Driver) matchPoolCIDR(reqPool string) (subnet, gateway string, err error) {
+	_, requested, err := net.ParseCIDR(reqPool)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid pool %q: %w", reqPool, err)
+	}
+
+	candidates := []struct {
+		subnet  string
+		gateway string
+	}{
+		{d.iface.SubnetV4, d.iface.GatewayV4},
+	}
+	if d.iface.SubnetV6 != "" {
+		candidates = append(candidates, struct {
+			subnet  string
+			gateway string
+		}{d.iface.SubnetV6, d.iface.GatewayV6})
+	}
+
+	for _, c := range candidates {
+		if c.subnet == "" {
+			continue
+		}
+		_, detected, err := net.ParseCIDR(c.subnet)
+		if err != nil {
+			continue
+		}
+		if requested.String() == detected.String() {
+			return c.subnet, c.gateway, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("requested pool %q does not match detected subnet (v4=%q, v6=%q)", reqPool, d.iface.SubnetV4, d.iface.SubnetV6)
+}
+
 func (d *Driver) RequestPool(req *ipam.RequestPoolRequest) (*ipam.RequestPoolResponse, error) {
 	if req.Pool == "" {
 		return nil, fmt.Errorf("pool must be specified")
 	}
-	_, requested, err := net.ParseCIDR(req.Pool)
+
+	subnet, gateway, err := d.matchPoolCIDR(req.Pool)
 	if err != nil {
-		return nil, fmt.Errorf("invalid pool %q: %w", req.Pool, err)
-	}
-	_, detected, err := net.ParseCIDR(d.iface.Subnet)
-	if err != nil {
-		return nil, fmt.Errorf("invalid detected subnet %q: %w", d.iface.Subnet, err)
-	}
-	if requested.String() != detected.String() {
-		return nil, fmt.Errorf("requested pool %q != detected subnet %q", requested.String(), detected.String())
+		return nil, err
 	}
 
-	log.Printf("RequestPool: poolID=%s req.Pool=%q gateway=%s", d.iface.Subnet, req.Pool, d.iface.Gateway)
+	log.Printf("RequestPool: poolID=%s req.Pool=%q gateway=%s", subnet, req.Pool, gateway)
 	return &ipam.RequestPoolResponse{
-		PoolID: d.iface.Subnet,
-		Pool:   d.iface.Subnet,
-		Data:   map[string]string{"gateway": d.iface.Gateway},
+		PoolID: subnet,
+		Pool:   subnet,
+		Data:   map[string]string{"gateway": gateway},
 	}, nil
 }
 
@@ -82,14 +113,29 @@ func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
 func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestAddressResponse, error) {
 	log.Printf("RequestAddress: poolID=%s address=%q options=%v", req.PoolID, req.Address, req.Options)
 
+	// Determine the IP family from the poolID to pick the right gateway & subnet
+	isV6 := false
+	if poolIP, _, err := net.ParseCIDR(req.PoolID); err == nil && poolIP.To4() == nil {
+		isV6 = true
+	}
+
+	var gatewayAddr, subnetCIDR string
+	if isV6 {
+		gatewayAddr = d.iface.GatewayV6
+		subnetCIDR = d.iface.SubnetV6
+	} else {
+		gatewayAddr = d.iface.GatewayV4
+		subnetCIDR = d.iface.SubnetV4
+	}
+
 	// Gateway — verify RequestAddressType and return as-is with subnet prefix.
 	if req.Address != "" {
 		if req.Options["RequestAddressType"] != "com.docker.network.gateway" {
 			log.Printf("RequestAddress: refusing static address %q", req.Address)
 			return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
 		}
-		if ip := net.ParseIP(req.Address); ip != nil && ip.Equal(net.ParseIP(d.iface.Gateway)) {
-			_, ipNet, _ := net.ParseCIDR(d.iface.Subnet)
+		if ip := net.ParseIP(req.Address); ip != nil && ip.Equal(net.ParseIP(gatewayAddr)) {
+			_, ipNet, _ := net.ParseCIDR(subnetCIDR)
 			ones, _ := ipNet.Mask.Size()
 			cidrAddr := fmt.Sprintf("%s/%d", ip.String(), ones)
 			log.Printf("RequestAddress: returning gateway addr=%s", cidrAddr)
@@ -112,9 +158,9 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 	}
 
 	addr := lease.ACK.YourIPAddr.String()
-	_, ipNet, err := net.ParseCIDR(d.iface.Subnet)
+	_, ipNet, err := net.ParseCIDR(subnetCIDR)
 	if err != nil {
-		return nil, fmt.Errorf("parse subnet %q: %w", d.iface.Subnet, err)
+		return nil, fmt.Errorf("parse subnet %q: %w", subnetCIDR, err)
 	}
 	ones, _ := ipNet.Mask.Size()
 	cidrAddr := fmt.Sprintf("%s/%d", addr, ones)
