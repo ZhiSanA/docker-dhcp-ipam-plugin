@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"os"
@@ -31,7 +31,7 @@ type Config struct {
 	MACFromName        bool
 }
 
-func loadConfig() *Config {
+func LoadConfig() *Config {
 	cfg := &Config{
 		SocketPath:         defaultSocketPath,
 		LogLevel:           defaultLogLevel,

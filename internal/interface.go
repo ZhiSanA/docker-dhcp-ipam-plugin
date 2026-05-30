@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"bufio"
@@ -20,7 +20,7 @@ type InterfaceInfo struct {
 
 // ── Detection ─────────────────────────────────────────────────────────
 
-func detectInterface(ifaceName string) (*InterfaceInfo, error) {
+func DetectInterface(ifaceName string) (*InterfaceInfo, error) {
 	if ifaceName != "" {
 		return detectNamedInterface(ifaceName)
 	}

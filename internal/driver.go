@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"context"
@@ -20,6 +20,17 @@ type Driver struct {
 	leases      *LeaseStore
 	cancelFuncs map[string]context.CancelFunc
 	mu          sync.Mutex
+}
+
+func NewDriver(cfg *Config, iface *InterfaceInfo) *Driver {
+	return &Driver{
+		cfg:         cfg,
+		iface:       iface,
+		dhcp:        newDHCPClient(cfg),
+		pools:       NewPoolStore(),
+		leases:      NewLeaseStore(),
+		cancelFuncs: make(map[string]context.CancelFunc),
+	}
 }
 
 func (d *Driver) GetCapabilities() (*ipam.CapabilitiesResponse, error) {

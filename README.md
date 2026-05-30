@@ -106,17 +106,18 @@ The plugin supports three MAC resolution strategies, checked in this order:
 ## Files
 
 ```
-├── main.go          # Entry point
-├── config.go        # Config struct, env var loading
-├── driver.go        # IPAM driver (RequestPool, RequestAddress, ReleasePool, ReleaseAddress)
-├── dhcp.go          # DHCP client wrapper (Obtain, Renew, Release, RenewLoop)
-├── interface.go     # Host interface detection (/proc/net/route, net.Interface)
-├── store.go         # In-memory PoolStore and LeaseStore
-├── mac.go           # MAC resolution and generation
-├── config.json      # Docker managed plugin manifest
-├── build.sh         # Build script for Docker managed plugin
+├── main.go              # Entry point
+├── internal/
+│   ├── config.go        # Config struct, env var loading
+│   ├── driver.go        # IPAM driver (RequestPool, RequestAddress, ReleasePool, ReleaseAddress)
+│   ├── dhcp.go          # DHCP client wrapper (Obtain, Renew, Release, RenewLoop)
+│   ├── interface.go     # Host interface detection (/proc/net/route, net.Interface)
+│   ├── store.go         # In-memory PoolStore and LeaseStore
+│   └── mac.go           # MAC resolution and generation
+├── config.json          # Docker managed plugin manifest
+├── build.sh             # Build script for Docker managed plugin
 ├── docker-compose.yaml  # Test compose file
-└── go.mod / go.sum  # Go module dependencies
+└── go.mod / go.sum      # Go module dependencies
 ```
 
 ## Troubleshooting

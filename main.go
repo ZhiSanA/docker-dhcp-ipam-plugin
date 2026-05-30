@@ -1,18 +1,18 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 
 	"github.com/docker/go-plugins-helpers/ipam"
+	"github.com/tuzi/docker-dhcp-ipam-plugin/internal"
 )
 
 func main() {
-	cfg := loadConfig()
+	cfg := internal.LoadConfig()
 	log.Printf("starting DHCP IPAM plugin, interface=%s, socket=%s", cfg.HostInterface, cfg.SocketPath)
 
-	ifaceInfo, err := detectInterface(cfg.HostInterface)
+	ifaceInfo, err := internal.DetectInterface(cfg.HostInterface)
 	if err != nil {
 		log.Fatalf("failed to detect host interface: %v", err)
 	}
@@ -22,14 +22,7 @@ func main() {
 		cfg.HostInterface = ifaceInfo.Name
 	}
 
-	driver := &Driver{
-		cfg:         cfg,
-		iface:       ifaceInfo,
-		dhcp:        newDHCPClient(cfg),
-		pools:       NewPoolStore(),
-		leases:      NewLeaseStore(),
-		cancelFuncs: make(map[string]context.CancelFunc),
-	}
+	driver := internal.NewDriver(cfg, ifaceInfo)
 	handler := ipam.NewHandler(driver)
 
 	os.Remove(cfg.SocketPath)
