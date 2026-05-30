@@ -1,18 +1,17 @@
 services:
   nginx:
     image: nginx:alpine
-    container_name: dhcp-test-nginx
     networks:
       - dhcp-net
   caddy:
     image: caddy:alpine
-    container_name: dhcp-test-caddy
     networks:
       - dhcp-net
 
 networks:
   dhcp-net:
     driver: macvlan
+    enable_ipv6: true
     driver_opts:
       parent: ens18
     ipam:
@@ -20,3 +19,6 @@ networks:
       config:
         - subnet: "10.0.0.0/15"
           gateway: "10.0.0.1"
+          # ip_range: "10.0.0.0/24"
+        - subnet: "2409:8a50:a70:2110::/64"
+          gateway: "2409:8a50:a70:2110::1"
