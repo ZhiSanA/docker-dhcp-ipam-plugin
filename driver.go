@@ -388,11 +388,17 @@ func (d *Driver) ReleasePool(req *ipam.ReleasePoolRequest) error {
 func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestAddressResponse, error) {
 	log.Printf("RequestAddress: poolID=%s address=%q options=%v", req.PoolID, req.Address, req.Options)
 
-	// IPs are managed by macvlan — accept any request as-is.
 	respAddr := req.Address
 	if respAddr == "" {
 		respAddr = d.iface.Subnet
+	} else if ip := net.ParseIP(respAddr); ip != nil {
+		// Bare IP without mask (e.g. gateway "10.0.0.1") — append subnet prefix.
+		_, ipNet, _ := net.ParseCIDR(d.iface.Subnet)
+		ones, _ := ipNet.Mask.Size()
+		respAddr = fmt.Sprintf("%s/%d", ip.String(), ones)
 	}
+	// else: already a CIDR string, use as-is.
+
 	return &ipam.RequestAddressResponse{
 		Address: respAddr,
 		Data:    map[string]string{"mac_address": d.iface.MAC.String()},
