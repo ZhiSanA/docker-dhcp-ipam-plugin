@@ -121,6 +121,7 @@ func newDHCPv6Client(cfg *Config) *DHCPv6Client {
 }
 
 // Obtain6 performs DHCPv6 Solicit → Request to get an IPv6 address.
+// Falls back to EUI-64 if no DHCPv6 server responds (returns nil, nil).
 func (c *DHCPv6Client) Obtain6(ctx context.Context, ifaceName string, hwAddr net.HardwareAddr, hostname string) (*dhcpv6.Message, error) {
 	cli, err := nclient6.New(ifaceName,
 		nclient6.WithTimeout(c.timeout),
@@ -145,12 +146,13 @@ func (c *DHCPv6Client) Obtain6(ctx context.Context, ifaceName string, hwAddr net
 
 	advertise, err := cli.Solicit(ctx, mods...)
 	if err != nil {
-		return nil, fmt.Errorf("dhcpv6 solicit: %w", err)
+		// No DHCPv6 server — return nil so caller can fall back to EUI-64
+		return nil, nil
 	}
 
 	reply, err := cli.Request(ctx, advertise, mods...)
 	if err != nil {
-		return nil, fmt.Errorf("dhcpv6 request: %w", err)
+		return nil, nil
 	}
 
 	return reply, nil
