@@ -10,10 +10,12 @@
 容器 → macvlan → DHCP IPAM 插件 → 局域网 DHCP 请求 → DHCP 服务器 → IP 租约
 ```
 
-1. 插件启动时自动检测宿主机网卡和子网（从默认路由）
+1. 插件启动时自动检测宿主机网卡、子网和网关（同时检测 IPv4 和 IPv6）
 2. Docker 创建 macvlan 网络时，插件校验请求的子网是否与宿主机一致
-3. 容器接入时，插件用稳定 MAC 向局域网 DHCP 服务器发起请求
-4. 获取的 IP 返回给 Docker，后台 goroutine 自动续租
+3. 容器接入时：
+   - **IPv4**：发送 DHCP 请求，携带容器名作为 hostname，后台 goroutine 自动续租
+   - **IPv6**：优先尝试 DHCPv6，若局域网无 DHCPv6 服务器则自动降级为 EUI-64（从容器的 MAC 生成稳定地址）
+4. 获取的 IP 返回给 Docker
 
 ## 前提条件
 
@@ -83,6 +85,7 @@ docker compose down
 | `DHCP_IPAM_RETRIES` | `3` | DHCP 请求失败重试次数。 |
 | `DHCP_IPAM_RENEW_INTERVAL` | `30s` | 租约续期检查间隔。 |
 | `DHCP_IPAM_MAC_FROM_NAME` | `true` | 启用后，从容器的 `com.docker.network.endpoint.name` 生成稳定的 MAC 地址。这样重建容器（同名）会拿到相同的 DHCP 租约 IP。设为 `false` 则使用 Docker 分配的 MAC。 |
+| `DHCP_IPAM_SKIP_GATEWAY_CHECK` | `false` | 设为 `true` 时，网关地址不校验是否在子网 CIDR 范围内，直接返回。|
 
 ### 设置环境变量
 
@@ -98,6 +101,42 @@ docker plugin set fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin DHCP_IPAM
   {"name": "DHCP_IPAM_INTERFACE", "value": "eth0"},
   {"name": "DHCP_IPAM_TIMEOUT", "value": "15s"}
 ]
+```
+
+## IPv4/IPv6 双栈支持
+
+插件原生支持双栈。在 `docker-compose.yaml` 或 `docker network create` 中同时配置 IPv4 和 IPv6 子网即可。
+
+当 `poolID`（CIDR）是 IPv6 地址时，插件自动走 **DHCPv6** 路径；若局域网无 DHCPv6 服务器响应，自动降级为 **EUI-64** 方式从容器的 MAC 生成稳定 IPv6 地址。
+
+### docker-compose 双栈配置示例
+
+```yaml
+networks:
+  dhcp-net:
+    driver: macvlan
+    enable_ipv6: true
+    driver_opts:
+      parent: ens18
+    ipam:
+      driver: fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
+      config:
+        - subnet: "192.168.1.0/24"
+          gateway: "192.168.1.1"
+        - subnet: "2409:8a50:a70:2110::/64"
+          gateway: "2409:8a50:a70:2110::1"
+```
+
+### docker network create 双栈
+
+```bash
+docker network create \
+  --driver macvlan \
+  --ipam-driver fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest \
+  --ipam-opt subnet=192.168.1.0/24 \
+  --ipam-opt subnet=2409:8a50:a70:2110::/64 \
+  --opt parent=eth0 \
+  my-network
 ```
 
 ## MAC 地址策略
@@ -118,7 +157,7 @@ docker plugin set fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin DHCP_IPAM
 │   ├── dhcp.go          # DHCP 客户端封装（Obtain、Renew、Release、RenewLoop）
 │   ├── interface.go     # 宿主机网卡检测（/proc/net/route、net.Interface）
 │   ├── store.go         # 内存 PoolStore 和 LeaseStore
-│   └── mac.go           # MAC 地址解析和生成
+│   └── mac.go           # MAC 解析、EUI-64 IPv6 地址生成
 ├── config.json          # Docker managed plugin 清单
 ├── build.sh             # 构建脚本
 ├── docker-compose.yaml  # 测试用 compose 文件
