@@ -129,16 +129,12 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 		subnetCIDR = d.iface.SubnetV4
 	}
 
-	// Gateway — verify RequestAddressType and return as-is with subnet prefix.
+	// Gateway — accept any gateway address with subnet prefix.
 	if req.Address != "" {
-		if req.Options["RequestAddressType"] != "com.docker.network.gateway" {
-			log.Printf("RequestAddress: refusing static address %q", req.Address)
-			return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
-		}
-		if ip := net.ParseIP(req.Address); ip != nil {
+		if req.Options["RequestAddressType"] == "com.docker.network.gateway" {
 			_, ipNet, _ := net.ParseCIDR(subnetCIDR)
 			ones, _ := ipNet.Mask.Size()
-			cidrAddr := fmt.Sprintf("%s/%d", ip.String(), ones)
+			cidrAddr := fmt.Sprintf("%s/%d", net.ParseIP(req.Address).String(), ones)
 			log.Printf("RequestAddress: returning gateway addr=%s", cidrAddr)
 			return &ipam.RequestAddressResponse{
 				Address: cidrAddr,

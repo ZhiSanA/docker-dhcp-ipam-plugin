@@ -16,6 +16,7 @@ const (
 	envDHCPTimeout   = "DHCP_IPAM_TIMEOUT"
 	envDHCPRetries   = "DHCP_IPAM_RETRIES"
 	envMACFromName   = "DHCP_IPAM_MAC_FROM_NAME"
+	envSkipGwCheck   = "DHCP_IPAM_SKIP_GATEWAY_CHECK"
 
 	defaultSocketPath = "/run/docker/plugins/dhcp-ipam.sock"
 	defaultLogLevel   = "info"
@@ -29,6 +30,7 @@ type Config struct {
 	DHCPTimeout        time.Duration
 	DHCPRetries        int
 	MACFromName        bool
+	SkipGatewayCheck   bool
 }
 
 func LoadConfig() *Config {
@@ -63,6 +65,9 @@ func LoadConfig() *Config {
 	}
 	if v := os.Getenv(envMACFromName); v != "" {
 		cfg.MACFromName = v == "1" || v == "true"
+	}
+	if v := os.Getenv(envSkipGwCheck); v != "" {
+		cfg.SkipGatewayCheck = v == "1" || v == "true"
 	}
 	return cfg
 }
