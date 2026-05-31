@@ -17,6 +17,7 @@ const (
 	envDHCPRetries   = "DHCP_IPAM_RETRIES"
 	envMACFromName   = "DHCP_IPAM_MAC_FROM_NAME"
 	envSkipGwCheck   = "DHCP_IPAM_SKIP_GATEWAY_CHECK"
+	envDHCPv6Disable = "DHCP_IPAM_DISABLE_DHCPV6"
 
 	defaultSocketPath = "/run/docker/plugins/dhcp-ipam.sock"
 	defaultLogLevel   = "info"
@@ -31,6 +32,7 @@ type Config struct {
 	DHCPRetries        int
 	MACFromName        bool
 	SkipGatewayCheck   bool
+	DisableDHCPv6      bool
 }
 
 func LoadConfig() *Config {
@@ -41,6 +43,7 @@ func LoadConfig() *Config {
 		DHCPTimeout:        10 * time.Second,
 		DHCPRetries:        3,
 		MACFromName:        true,
+		DisableDHCPv6:       true,
 	}
 	if v := os.Getenv(envInterface); v != "" {
 		cfg.HostInterface = v
@@ -68,6 +71,9 @@ func LoadConfig() *Config {
 	}
 	if v := os.Getenv(envSkipGwCheck); v != "" {
 		cfg.SkipGatewayCheck = v == "1" || v == "true"
+	}
+	if v := os.Getenv(envDHCPv6Disable); v != "" {
+		cfg.DisableDHCPv6 = v == "1" || v == "true"
 	}
 	return cfg
 }

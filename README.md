@@ -85,7 +85,8 @@ docker compose down
 | `DHCP_IPAM_RETRIES` | `3` | DHCP 请求失败重试次数。 |
 | `DHCP_IPAM_RENEW_INTERVAL` | `30s` | 租约续期检查间隔。 |
 | `DHCP_IPAM_MAC_FROM_NAME` | `true` | 启用后，从容器的 `com.docker.network.endpoint.name` 生成稳定的 MAC 地址。这样重建容器（同名）会拿到相同的 DHCP 租约 IP。设为 `false` 则使用 Docker 分配的 MAC。 |
-| `DHCP_IPAM_SKIP_GATEWAY_CHECK` | `false` | 设为 `true` 时，网关地址不校验是否在子网 CIDR 范围内，直接返回。|
+| `DHCP_IPAM_SKIP_GATEWAY_CHECK` | `false` | 设为 `true` 时，网关地址不校验是否在子网 CIDR 范围内，直接返回。 |
+| `DHCP_IPAM_DISABLE_DHCPV6` | `true` | 默认禁用 DHCPv6，IPv6 地址通过 EUI-64 从容器 MAC 生成（无需等待 DHCPv6 超时）。设为 `false` 开启 DHCPv6。 |
 
 ### 设置环境变量
 

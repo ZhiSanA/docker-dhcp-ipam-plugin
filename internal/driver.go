@@ -144,24 +144,27 @@ func (d *Driver) RequestAddress(req *ipam.RequestAddressRequest) (*ipam.RequestA
 		return nil, fmt.Errorf("static address %q not supported by DHCP IPAM driver", req.Address)
 	}
 
-		// IPv6: try DHCPv6 first, fall back to EUI-64 from MAC.
+		// IPv6: try DHCPv6 (if enabled), otherwise use EUI-64 from MAC.
 	if isV6 {
 			mac := resolveMAC(req.Options, req.PoolID, d.cfg)
 			endpointName := req.Options["com.docker.network.endpoint.name"]
-			ctx, cancel := context.WithTimeout(context.Background(), d.cfg.DHCPTimeout)
-			defer cancel()
 
-			reply, err := d.dhcpv6.Obtain6(ctx, d.iface.Name, mac, endpointName)
-			if err == nil && reply != nil {
-				// DHCPv6 succeeded â use assigned address.
-				iaAddr := extractIPv6Addr(reply, subnetCIDR)
-				log.Printf("RequestAddress: IPv6 pool (DHCPv6), MAC=%s addr=%s", mac, iaAddr)
-				return &ipam.RequestAddressResponse{
-					Address: iaAddr,
-				}, nil
+			// Try DHCPv6 only if enabled
+			if !d.cfg.DisableDHCPv6 {
+				ctx, cancel := context.WithTimeout(context.Background(), d.cfg.DHCPTimeout)
+				defer cancel()
+
+				reply, err := d.dhcpv6.Obtain6(ctx, d.iface.Name, mac, endpointName)
+				if err == nil && reply != nil {
+					iaAddr := extractIPv6Addr(reply, subnetCIDR)
+					log.Printf("RequestAddress: IPv6 pool (DHCPv6), MAC=%s addr=%s", mac, iaAddr)
+					return &ipam.RequestAddressResponse{
+						Address: iaAddr,
+					}, nil
+				}
 			}
 
-			// No DHCPv6 server â fall back to EUI-64.
+			// No DHCPv6 (disabled or unavailable) â use EUI-64.
 			ipv6Addr := eui64Address(subnetCIDR, mac)
 			log.Printf("RequestAddress: IPv6 pool (EUI-64), MAC=%s addr=%s", mac, ipv6Addr)
 			return &ipam.RequestAddressResponse{
