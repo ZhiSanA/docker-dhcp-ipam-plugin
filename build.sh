@@ -27,8 +27,9 @@ echo "✅ Plugin $NAME created and enabled"
 
 rm -rf "$WORKDIR"
 
+# docker plugin push fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
 # docker plugin install fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
-# docker network create -d macvlan --subnet="10.0.0.0/15" --gateway="10.0.0.1" -o parent=ens18 --ipv6  --subnet="2409:8a50:a70:2110::/64" --gateway="2409:8a50:a70:2110::1" --ipam-driver fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest river
+# docker network create -d macvlan --subnet="10.0.0.0/15" --gateway="10.0.0.1" -o parent=ens18 --ipv6 --subnet="2409:8a50:a70:2110::/64" --gateway="2409:8a50:a70:2110::1" --ipam-driver fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest river
 # docker plugin disable -f fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
 # docker plugin upgrade fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
 # docker plugin enable fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
