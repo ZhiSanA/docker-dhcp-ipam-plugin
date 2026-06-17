@@ -211,7 +211,7 @@ docker plugin inspect <插件名>
 如果需要自行构建，可以克隆仓库后运行构建脚本：
 
 ```bash
-git clone https://github.com/tuzi/docker-dhcp-ipam-plugin.git
+git clone https://github.com/ZhiSanA/docker-dhcp-ipam-plugin.git
 cd docker-dhcp-ipam-plugin
 ./build.sh
 ```

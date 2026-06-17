@@ -1,6 +1,6 @@
 {
   "description": "Docker IPAM driver that allocates IPs via DHCP from the LAN",
-  "documentation": "https://github.com/tuzi/docker-dhcp-ipam-plugin",
+  "documentation": "https://github.com/ZhiSanA/docker-dhcp-ipam-plugin",
   "entrypoint": ["/docker-dhcp-ipam-plugin"],
   "network": {
     "type": "host"
