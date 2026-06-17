@@ -28,7 +28,7 @@
 ### 1. 安装插件
 
 ```bash
-docker plugin install fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
+docker plugin install ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
 ```
 
 ### 2. 创建 macvlan 网络
@@ -36,7 +36,7 @@ docker plugin install fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:lates
 ```bash
 docker network create \
   --driver macvlan \
-  --ipam-driver fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest \
+  --ipam-driver ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest \
   --ipam-opt subnet=192.168.1.0/24 \
   --opt parent=eth0 \
   my-network
@@ -92,7 +92,7 @@ docker compose down
 
 ```bash
 # 指定自定义网卡
-docker plugin set fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin DHCP_IPAM_INTERFACE=eth1
+docker plugin set ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin DHCP_IPAM_INTERFACE=eth1
 ```
 
 或在构建前编辑 `config.json`，加到 `"env"` 数组：
@@ -120,7 +120,7 @@ networks:
     driver_opts:
       parent: ens18
     ipam:
-      driver: fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest
+      driver: ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
       config:
         - subnet: "192.168.1.0/24"
           gateway: "192.168.1.1"
@@ -133,7 +133,7 @@ networks:
 ```bash
 docker network create \
   --driver macvlan \
-  --ipam-driver fox.zoo.twofactor.space/tuzi/docker-dhcp-ipam-plugin:latest \
+  --ipam-driver ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest \
   --ipam-opt subnet=192.168.1.0/24 \
   --ipam-opt subnet=2409:8a50:a70:2110::/64 \
   --opt parent=eth0 \
