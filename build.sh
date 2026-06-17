@@ -5,7 +5,7 @@
 
 set -e
 
-NAME="${1:-ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin}"
+NAME="${1:-ghcr.io/zhisana/docker-dhcp-ipam-plugin}"
 BINARY="docker-dhcp-ipam-plugin"
 
 echo "==> Cleaning up old plugin..."
@@ -27,9 +27,9 @@ echo "✅ Plugin $NAME created and enabled"
 
 rm -rf "$WORKDIR"
 
-# docker plugin push ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
-# docker plugin install ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
-# docker network create -d macvlan --subnet="10.0.0.0/15" --gateway="10.0.0.1" -o parent=ens18 --ipv6 --subnet="2409:8a50:a70:2110::/64" --gateway="2409:8a50:a70:2110::1" --ipam-driver ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest river
-# docker plugin disable -f ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
-# docker plugin upgrade ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
-# docker plugin enable ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
+# docker plugin push ghcr.io/zhisana/docker-dhcp-ipam-plugin:latest
+# docker plugin install ghcr.io/zhisana/docker-dhcp-ipam-plugin:latest
+# docker network create -d macvlan --subnet="10.0.0.0/15" --gateway="10.0.0.1" -o parent=ens18 --ipv6 --subnet="2409:8a50:a70:2110::/64" --gateway="2409:8a50:a70:2110::1" --ipam-driver ghcr.io/zhisana/docker-dhcp-ipam-plugin:latest river
+# docker plugin disable -f ghcr.io/zhisana/docker-dhcp-ipam-plugin:latest
+# docker plugin upgrade ghcr.io/zhisana/docker-dhcp-ipam-plugin:latest
+# docker plugin enable ghcr.io/zhisana/docker-dhcp-ipam-plugin:latest

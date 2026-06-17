@@ -15,7 +15,7 @@ networks:
     driver_opts:
       parent: ens18
     ipam:
-      driver: ghcr.io/ZhiSanA/docker-dhcp-ipam-plugin:latest
+      driver: ghcr.io/zhisana/docker-dhcp-ipam-plugin:latest
       config:
         - subnet: "10.0.0.0/15"
           gateway: "10.0.0.1"
